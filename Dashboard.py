@@ -206,6 +206,45 @@ def update_summary():
         callable_day_labels[i].config(text=f"${buckets[key]:,.0f}")
 
 
+def import_raw_data():
+    popup = tk.Toplevel(root)
+    popup.title("Paste CSV Data")
+    popup.geometry("600x400")
+    popup.lift()
+    popup.focus_force()
+
+    txt = tk.Text(popup)
+    txt.pack(fill="both", expand=True)
+
+    btn_frame = tk.Frame(popup)
+    btn_frame.pack(pady=5)
+
+    def load_pasted():
+        try:
+            data = txt.get("1.0", tk.END).strip()
+
+            if not data:
+                messagebox.showwarning("Empty", "No data pasted.")
+                return
+
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                f.write(data)
+
+            load_csv_from_text(data)
+
+            popup.destroy()
+            messagebox.showinfo("Success", "Data imported and saved successfully.")
+
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
+
+    tk.Button(btn_frame, text="Save & Load Data", command=load_pasted).pack(side="left", padx=5)
+    tk.Button(btn_frame, text="Cancel", command=popup.destroy).pack(side="left", padx=5)
+
+    popup.bind("<Escape>", lambda e: popup.destroy())
+    popup.protocol("WM_DELETE_WINDOW", popup.destroy)
+
+
 # ---------------- UI ---------------- #
 
 root = tk.Tk()
@@ -214,7 +253,7 @@ root.geometry("1250x800")
 
 df = pd.DataFrame()
 
-tk.Button(root, text="Paste Raw CSV Data", command=lambda: load_csv_from_text(open(DATA_FILE).read()) if os.path.exists(DATA_FILE) else None).pack(pady=10)
+tk.Button(root, text="Paste Raw CSV Data", command=import_raw_data).pack(pady=10)
 
 frame = tk.Frame(root)
 frame.pack()
