@@ -2,6 +2,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox
 import os
+from PIL import Image, ImageTk
 
 # ---------------- RISK TABLES ---------------- #
 
@@ -23,6 +24,7 @@ recovery_rates = {
 }
 
 DATA_FILE = "bond_data.csv"
+BACKGROUND_FILE = "background.png"
 
 # ---------------- SORTING ---------------- #
 
@@ -49,7 +51,7 @@ def sort_column(col, reverse=False):
         if col in numeric_cols:
             clean = str(val).replace("$", "").replace(",", "").replace("%", "").strip()
             try:
-                sort_val = float(clean) if clean != "" else 0.0
+                sort_val = float(clean) if clean else 0.0
             except:
                 sort_val = 0.0
         elif col in {"Rating", "Rating at Purchase"}:
@@ -100,7 +102,6 @@ def load_csv_from_text(text_data):
                 continue
 
             company = line
-
             rating_line = cleaned[i + 1].strip()
 
             if "(" in rating_line:
@@ -163,8 +164,8 @@ def refresh_table():
             row["Company"],
             row["Rating"],
             row["Rating at Purchase"],
-            row["Interest Rate"],
-            f"{row['Amount']:,.0f}",
+            f"{row['Interest Rate']:.2f}%",
+            f"${row['Amount']:,.0f}",
             row["Callable (Days)"],
             f"{row['Default Rate %']:.2f}%",
             f"{row['Recovery rate %']:.2f}%",
@@ -177,32 +178,39 @@ def refresh_table():
 # ---------------- SUMMARY ---------------- #
 
 def update_summary():
-    total = df["Amount"].sum()
-    callable_amt = df[df["Callable (Days)"] <= 0]["Amount"].sum()
-    recovery = df["Recovery Value ($)"].sum()
+    total = df["Amount"].sum() if not df.empty else 0
+    callable_amt = df[df["Callable (Days)"] <= 0]["Amount"].sum() if not df.empty else 0
+    recovery = df["Recovery Value ($)"].sum() if not df.empty else 0
     bond_count = len(df)
     avg_bond = total / bond_count if bond_count > 0 else 0
+
+    weighted_risk_amount = (
+        (df["Default Rate %"] / 100 * (df["Amount"] - df["Recovery Value ($)"])).sum()
+        if not df.empty else 0
+    )
+
+    risk_pct = (weighted_risk_amount / total * 100) if total > 0 else 0
 
     lbl_total.config(text=f"${total:,.0f}")
     lbl_callable.config(text=f"${callable_amt:,.0f}")
     lbl_recovery.config(text=f"${recovery:,.0f}")
+    lbl_weighted_risk.config(text=f"${weighted_risk_amount:,.0f} ({risk_pct:.2f}%)")
     lbl_avg_bond.config(text=f"${avg_bond:,.0f}")
     lbl_bond_count.config(text=f"{bond_count:,}")
 
-    # --- New bucket logic ---
     buckets = {
-        0: df[df["Callable (Days)"] <= 0]["Amount"].sum(),
-        1: df[df["Callable (Days)"] == 1]["Amount"].sum(),
-        2: df[df["Callable (Days)"] == 2]["Amount"].sum(),
-        3: df[df["Callable (Days)"] == 3]["Amount"].sum(),
-        4: df[df["Callable (Days)"] == 4]["Amount"].sum(),
-        5: df[df["Callable (Days)"] == 5]["Amount"].sum(),
-        6: df[df["Callable (Days)"] == 6]["Amount"].sum(),
-        7: df[df["Callable (Days)"] == 7]["Amount"].sum(),
-        14: df[df["Callable (Days)"] > 7]["Amount"].sum()
+        0: df[df["Callable (Days)"] <= 0]["Amount"].sum() if not df.empty else 0,
+        1: df[df["Callable (Days)"] == 1]["Amount"].sum() if not df.empty else 0,
+        2: df[df["Callable (Days)"] == 2]["Amount"].sum() if not df.empty else 0,
+        3: df[df["Callable (Days)"] == 3]["Amount"].sum() if not df.empty else 0,
+        4: df[df["Callable (Days)"] == 4]["Amount"].sum() if not df.empty else 0,
+        5: df[df["Callable (Days)"] == 5]["Amount"].sum() if not df.empty else 0,
+        6: df[df["Callable (Days)"] == 6]["Amount"].sum() if not df.empty else 0,
+        7: df[df["Callable (Days)"] == 7]["Amount"].sum() if not df.empty else 0,
+        14: df[df["Callable (Days)"] > 7]["Amount"].sum() if not df.empty else 0
     }
 
-    for i, key in enumerate([0,1,2,3,4,5,6,7,14]):
+    for i, key in enumerate([0, 1, 2, 3, 4, 5, 6, 7, 14]):
         callable_day_labels[i].config(text=f"${buckets[key]:,.0f}")
 
 
@@ -213,11 +221,17 @@ def import_raw_data():
     popup.lift()
     popup.focus_force()
 
-    txt = tk.Text(popup)
+    txt = tk.Text(
+        popup,
+        bg="#111111",
+        fg="white",
+        insertbackground="white",
+        font=("Consolas", 10)
+    )
     txt.pack(fill="both", expand=True)
 
-    btn_frame = tk.Frame(popup)
-    btn_frame.pack(pady=5)
+    btn_frame = tk.Frame(popup, bg="#111111")
+    btn_frame.pack(fill="x", pady=5)
 
     def load_pasted():
         try:
@@ -251,53 +265,158 @@ root = tk.Tk()
 root.title("Bond Risk Dashboard")
 root.geometry("1250x800")
 
+# ---------------- BACKGROUND IMAGE ---------------- #
+
+# ---------------- DYNAMIC BACKGROUND IMAGE ---------------- #
+
+bg_label = None
+bg_original = None
+
+if os.path.exists(BACKGROUND_FILE):
+
+    bg_original = Image.open(BACKGROUND_FILE)
+
+    bg_label = tk.Label(root)
+    bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+
+    def resize_background(event):
+        global bg_photo
+
+        width = max(event.width, 1)
+        height = max(event.height, 1)
+
+        resized = bg_original.resize((width, height))
+
+        bg_photo = ImageTk.PhotoImage(resized)
+
+        bg_label.config(image=bg_photo)
+
+    root.bind("<Configure>", resize_background)
+
+else:
+    root.configure(bg="#111111")
+
 df = pd.DataFrame()
 
-tk.Button(root, text="Paste Raw CSV Data", command=import_raw_data).pack(pady=10)
+# ---------------- STYLES ---------------- #
 
-frame = tk.Frame(root)
-frame.pack()
+style = ttk.Style()
+style.theme_use("clam")
 
-lbl_total = tk.Label(frame, text="$0", font=("Arial", 12, "bold"))
-lbl_callable = tk.Label(frame, text="$0", font=("Arial", 12, "bold"))
-lbl_recovery = tk.Label(frame, text="$0", font=("Arial", 12, "bold"))
-lbl_avg_bond = tk.Label(frame, text="$0", font=("Arial", 12, "bold"))
-lbl_bond_count = tk.Label(frame, text="0", font=("Arial", 12, "bold"))
+style.configure(
+    "Treeview",
+    background="#1b1b1b",
+    foreground="white",
+    fieldbackground="#1b1b1b",
+    rowheight=28,
+    bordercolor="#333333",
+    borderwidth=0
+)
+
+style.configure(
+    "Treeview.Heading",
+    background="#222222",
+    foreground="white",
+    font=("Arial", 10, "bold")
+)
+
+style.map(
+    "Treeview",
+    background=[("selected", "#2a82da")]
+)
+
+# ---------------- TOP BUTTON ---------------- #
+
+top_button_frame = tk.Frame(root, bg="#111111")
+top_button_frame.pack(pady=10)
+
+tk.Button(
+    top_button_frame,
+    text="Paste Raw CSV Data",
+    command=import_raw_data,
+    bg="#222222",
+    fg="white",
+    activebackground="#333333",
+    activeforeground="white",
+    font=("Arial", 10, "bold")
+).pack()
+
+# ---------------- KPI SUMMARY ---------------- #
+
+frame = tk.Frame(root, bg="#111111")
+frame.pack(pady=5)
+
+metric_style = {
+    "font": ("Arial", 12, "bold"),
+    "bg": "#111111",
+    "fg": "#00ff99"
+}
+
+lbl_total = tk.Label(frame, text="$0", **metric_style)
+lbl_callable = tk.Label(frame, text="$0", **metric_style)
+lbl_recovery = tk.Label(frame, text="$0", **metric_style)
+lbl_avg_bond = tk.Label(frame, text="$0", **metric_style)
+lbl_bond_count = tk.Label(frame, text="0", **metric_style)
+lbl_weighted_risk = tk.Label(frame, text="$0", **metric_style)
 
 for i, (t, l) in enumerate([
     ("Total Outstanding", lbl_total),
     ("Callable", lbl_callable),
     ("Recovery Value", lbl_recovery),
+    ("Weighted Risk Amount", lbl_weighted_risk),
     ("Average Bond Amount", lbl_avg_bond),
     ("Total Bond Count", lbl_bond_count)
 ]):
-    tk.Label(frame, text=t).grid(row=0, column=i, padx=20)
+    tk.Label(
+        frame,
+        text=t,
+        bg="#111111",
+        fg="white",
+        font=("Arial", 10)
+    ).grid(row=0, column=i, padx=20)
+
     l.grid(row=1, column=i, padx=20)
 
-# ---- CALLABLE BREAKOUT ---- #
+# ---------------- CALLABLE BREAKOUT ---------------- #
 
 callable_day_labels = []
 
-callable_frame = tk.Frame(root)
+callable_frame = tk.Frame(root, bg="#111111")
 callable_frame.pack(pady=10)
 
-labels = ["Day 0","Day 1","Day 2","Day 3","Day 4","Day 5","Day 6","~ 7 Days","After 1 Week"]
+labels = [
+    "Day 0", "Day 1", "Day 2", "Day 3", "Day 4",
+    "Day 5", "Day 6", "~ 7 Days", "After 1 Week"
+]
 
 for i, text in enumerate(labels):
-    tk.Label(callable_frame, text=text).grid(row=1, column=i, padx=10)
-    lbl = tk.Label(callable_frame, text="$0", font=("Arial", 11, "bold"))
+    tk.Label(
+        callable_frame,
+        text=text,
+        bg="#111111",
+        fg="white",
+        font=("Arial", 9)
+    ).grid(row=1, column=i, padx=10)
+
+    lbl = tk.Label(
+        callable_frame,
+        text="$0",
+        font=("Arial", 11, "bold"),
+        bg="#111111",
+        fg="#00ff99"
+    )
     lbl.grid(row=2, column=i, padx=10)
     callable_day_labels.append(lbl)
 
-# ---- TABLE ---- #
+# ---------------- TABLE ---------------- #
 
 columns = [
-    "Company","Rating","Rating at Purchase","Interest Rate","Amount",
-    "Callable (Days)","Default Rate %","Recovery rate %","Recovery Value ($)"
+    "Company", "Rating", "Rating at Purchase", "Interest Rate", "Amount",
+    "Callable (Days)", "Default Rate %", "Recovery rate %", "Recovery Value ($)"
 ]
 
-frame_table = tk.Frame(root)
-frame_table.pack(fill="both", expand=True)
+frame_table = tk.Frame(root, bg="#111111")
+frame_table.pack(fill="both", expand=True, padx=20, pady=10)
 
 tree = ttk.Treeview(frame_table, columns=columns, show="headings")
 
